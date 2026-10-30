@@ -1,0 +1,20 @@
+Upstream project: PDF Arranger
+Repository: https://github.com/pdfarranger/pdfarranger
+Version: 1.14.0
+Commit: 29f306bb6932e28d3001b098f6dad9824ab74100
+License: GPL-3.0-or-later
+Derived module: paperdesk/pdfarranger_port.py
+Original modules: pdfarranger/core.py and pdfarranger/exporter.py
+Source at the pinned commit:
+https://github.com/pdfarranger/pdfarranger/tree/29f306bb6932e28d3001b098f6dad9824ab74100
+
+Adapted from core.py: Sides field definition, _img_to_pdf.
+Adapted from exporter.py: _normalize_rectangle, _intersect_rectangle,
+_mediabox, _scale, _update_angle, _apply_geom_transform.
+
+Changes include removing GTK/Poppler UI imports, providing minimal local
+types, and integrating these functions with a new Qt frontend. Original
+copyright notices are retained in the derived module.
+
+The Windows release ZIP includes the complete upstream source at the pinned
+commit in its upstream-pdfarranger directory.
