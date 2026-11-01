@@ -10,9 +10,9 @@
 
 Windows 64 位便携版：[前往 Releases 下载](https://github.com/zhangyuankun01/paperdesk/releases/latest)。
 
-1. 下载 `PaperDesk-2.0.0-windows-x64.zip`。
+1. 下载 `PaperDesk-2.1.0-windows-x64.zip`。
 2. 右键压缩包，选择“全部解压”，等待解压完成。
-3. 打开解压后的 `PaperDesk-2.0.0` 文件夹，双击 `PaperDesk.exe`。
+3. 打开解压后的 `PaperDesk-2.1.0` 文件夹，双击 `PaperDesk.exe`。
 
 请完整保留程序旁边的 `_internal` 文件夹。使用便携版无需安装 Python，也无需注册账号。GitHub 页面上的 **Code → Download ZIP** 下载的是源码；直接使用软件请下载 **Releases** 中的便携包。
 
@@ -29,7 +29,15 @@ Windows 64 位便携版：[前往 Releases 下载](https://github.com/zhangyuank
 - 后台读取与导出、中文提示、重复文件跳过、临时文件保存后替换目标文件。
 - 图片在本机处理，无上传服务或付费接口依赖。
 
-支持 JPG、JPEG、PNG、WebP、BMP、GIF、TIFF。多帧 GIF / TIFF 使用第一帧，导入时会提示。已有 EXIF 方向的手机照片会按方向信息处理。
+支持以下图片格式：
+
+- 手机照片：**HEIC / HEIF / HIF**、JPG / JPEG / JFIF。
+- 常用图片：PNG / APNG、WebP、BMP / DIB、GIF、TIFF。
+- 其他图片：AVIF、JPEG 2000（JP2 / J2K）、ICO、PCX、TGA、PPM / PGM / PBM / PNM、DDS、QOI、PSD 合成图。
+
+HEIC 解码器已内置，无需购买或安装 Windows 图片扩展。文件名为大写扩展名、扩展名不标准或没有扩展名的图片，也会按实际内容识别；在选择窗口切换到“所有文件”即可找到它们。
+
+多帧图片使用首帧，HEIC / HEIF 使用文件指定的主图；PSD 使用合成预览，导入后每个文件生成一页。手机照片按方向信息处理，10 / 12 位 HEIF 会解码为普通 8 位图片用于 PDF，不保留 HDR 动态范围。SVG、相机 RAW 和磁盘镜像不在此版本支持范围内。
 
 ## 维护者与贡献
 
@@ -80,7 +88,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py --self-test .\acceptance
 ```
 
-`--self-test` 使用独立的离屏窗口，输出验收记录、界面预览和测试 PDF。v2.0.0 发布准备中，本地记录为 **13 项源码测试通过、17 项打包程序检查通过**；覆盖中文路径、图片导入、拖动启动与换序、旋转、撤销、文件名和 PDF 输出等。
+`--self-test` 使用独立的离屏窗口，输出验收记录、界面预览和测试 PDF。源码测试覆盖中文路径、图片导入、拖动启动与换序、旋转、撤销、文件名及 PDF 输出；新增格式测试核对真实 HEIC / HEIF、AVIF 等图片转换后的尺寸和像素。打包自检也会实际解码图片并生成混合格式 PDF，用于发现便携包遗漏解码库的问题。
 
 ## 打包
 

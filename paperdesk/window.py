@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
     QStyle, QStyleOptionViewItem,
 )
 
-from .engine import Photo, ExportOptions, import_photo, export_pdf, natural_key, normalized_filename, friendly_error
+from .engine import Photo, ExportOptions, import_photo, export_pdf, natural_key, normalized_filename, friendly_error, IMAGE_FILE_FILTER
+from . import __version__
 
 
 STYLE = """
@@ -385,7 +386,7 @@ class MainWindow(QMainWindow):
     def choose_images(self):
         if self.busy:
             return
-        paths, _ = QFileDialog.getOpenFileNames(self, "添加图片", self.settings.value("input_dir", ""), "图片 (*.jpg *.jpeg *.png *.webp *.bmp *.gif *.tif *.tiff)")
+        paths, _ = QFileDialog.getOpenFileNames(self, "添加图片", self.settings.value("input_dir", ""), IMAGE_FILE_FILTER)
         if paths:
             self.settings.setValue("input_dir", str(Path(paths[0]).parent))
             self.add_paths(paths)
@@ -448,7 +449,7 @@ class MainWindow(QMainWindow):
         if added:
             self.snapshot()
             self.display(self.ordered() + added, added[0].uid)
-        self.notice.setText(f"已添加 {len(added)} 张图片。拖动缩略图可以调整顺序。" + (f"其中 {animated} 张多帧图片使用第一帧。" if animated else ""))
+        self.notice.setText(f"已添加 {len(added)} 张图片。拖动缩略图可以调整顺序。" + (f"其中 {animated} 张多帧图片使用首帧（HEIC/HEIF 使用主图）。" if animated else ""))
         if errors:
             box = QMessageBox(self)
             box.setWindowTitle("部分图片没有添加")
@@ -581,7 +582,7 @@ class MainWindow(QMainWindow):
     def about(self):
         box = QMessageBox(self)
         box.setWindowTitle("关于纸间 PDF")
-        box.setText("纸间 PDF 2.0\n\n中文图片转 PDF 工具。图片在本机处理。\n\n基于 PDF Arranger 1.14.0 的图片转换与页面变换源码改造，使用 GPL-3.0-or-later 许可证。\n完整源码在软件文件夹内的 modern-pdf 与 upstream-pdfarranger。")
+        box.setText(f"纸间 PDF {__version__}\n\n中文图片转 PDF 工具。图片在本机处理。\n支持 HEIC/HEIF、AVIF、JPG、PNG 等图片。\n\n基于 PDF Arranger 1.14.0 的图片转换与页面变换源码改造，使用 GPL-3.0-or-later 许可证。\n完整源码在软件文件夹内的 modern-pdf 与 upstream-pdfarranger。")
         box.addButton("知道了", QMessageBox.ButtonRole.AcceptRole)
         box.exec()
 

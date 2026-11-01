@@ -2,11 +2,14 @@
 """A packaged-app integration check; writes its evidence to the requested folder."""
 from pathlib import Path
 from io import BytesIO
+from contextlib import closing
 import json
+import shutil
+import sys
 import time
 import traceback
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 import pikepdf
 from PySide6.QtCore import QMimeData, Qt, QPointF
 from PySide6.QtGui import QDropEvent
@@ -102,6 +105,63 @@ def run(app, window, output: Path):
         window.choose_export()
         check("文件名不能" in window.notice.text(), "非法文件名提供中文提示")
         window.filename.setText("图片合并.pdf")
+        # Exercise the actual bundled decoders, not just file extensions.
+        fixtures = (Path(sys._MEIPASS) / "test-fixtures" if getattr(sys, "frozen", False)
+                    else Path(__file__).resolve().parent.parent / "tests" / "fixtures")
+        format_paths, expected_images = [], []
+        for name in ("phone.heic", "rotated.heic", "primary.heic", "ten-bit.heif"):
+            path = output / name
+            shutil.copyfile(fixtures / name, path)
+            format_paths.append(str(path))
+        for extension, format, mode in [
+            ("jfif", "JPEG", "RGB"), ("avif", "AVIF", "RGB"),
+            ("jp2", "JPEG2000", "RGB"), ("ico", "ICO", "RGB"),
+            ("pcx", "PCX", "RGB"), ("tga", "TGA", "RGB"),
+            ("pgm", "PPM", "L"), ("dds", "DDS", "RGB"),
+            ("qoi", "QOI", "RGB"), ("img", "PNG", "RGB"),
+        ]:
+            path = output / ("格式测试." + extension)
+            Image.new("RGB", (96, 96), (180, 90, 40)).convert(mode).save(path, format=format)
+            format_paths.append(str(path))
+        window.clear_images()
+        imported = {}
+        original_finished = window.import_finished
+        def capture_import(result):
+            imported["errors"] = result[1]
+            if not result[1]:
+                original_finished(result)
+        window.import_finished = capture_import
+        try:
+            window.add_paths(format_paths)
+            deadline = time.monotonic() + 30
+            while window.busy and time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(.01)
+        finally:
+            window.import_finished = original_finished
+        check(not window.busy and window.photos.count() == len(format_paths),
+              "打包版异步导入 HEIC/HEIF、AVIF、JFIF 等 14 张图片：" + str(imported.get("errors", [])))
+        merged = output / "多格式合并.pdf"
+        export_pdf(window.ordered(), str(merged), ExportOptions())
+        with pikepdf.Pdf.open(merged) as pdf:
+            check(len(pdf.pages) == len(format_paths), "混合格式导出 PDF 页数正确")
+            for photo, page in zip(window.ordered(), pdf.pages):
+                with closing(Image.open(photo.source)) as opened:
+                    expected = ImageOps.exif_transpose(opened)
+                    expected.load()
+                embedded = pikepdf.PdfImage(next(iter(page.Resources.XObject.values()))).as_pil_image().convert("RGB")
+                check(embedded.size == expected.size and
+                      embedded.getpixel((40, 40)) == expected.convert("RGB").getpixel((40, 40)),
+                      photo.name + " 转换后尺寸、像素和顺序正确")
+        rotated = next(p for p in window.ordered() if p.name == "rotated.heic")
+        check((rotated.width, rotated.height) == (64, 96), "HEIC 方向信息正确应用")
+        primary = next(p for p in window.ordered() if p.name == "primary.heic")
+        with Image.open(BytesIO(primary.thumb)) as preview:
+            r, g, b, _ = preview.getpixel((40, 40))
+            check(b > 240 and r < 10 and g < 10, "多图 HEIC 使用指定主图而非第零帧")
+        window.notice.setText("HEIC/HEIF、AVIF 等格式导入与 PDF 导出验证完成。")
+        app.processEvents()
+        window.grab().save(str(output / "03_多格式导入.png"))
         report["passed"] = True
     except Exception:
         report["error"] = traceback.format_exc()

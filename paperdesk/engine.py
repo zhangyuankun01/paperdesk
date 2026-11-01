@@ -2,7 +2,7 @@
 """Image ingestion and atomic PDF export, independent of the GUI."""
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 from dataclasses import dataclass, replace
 from io import BytesIO
 import os
@@ -14,11 +14,30 @@ import uuid
 from typing import Callable
 
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pi_heif import register_heif_opener
 import pikepdf
 
 from .pdfarranger_port import Sides, _img_to_pdf, _apply_geom_transform
 
-SUPPORTED = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+# Register once, before background import jobs. The bundled decoder works
+# without the Windows Store HEIF/HEVC extensions or an internet connection.
+register_heif_opener(thumbnails=False)
+IMAGE_FORMATS = (
+    "JPEG", "PNG", "WEBP", "BMP", "DIB", "GIF", "TIFF", "HEIF", "AVIF",
+    "JPEG2000", "ICO", "PCX", "TGA", "PPM", "DDS", "QOI", "PSD",
+)
+SUPPORTED = {
+    ".jpg", ".jpeg", ".jpe", ".jfif", ".png", ".apng", ".webp", ".bmp",
+    ".dib", ".gif", ".tif", ".tiff", ".heic", ".heif", ".heics", ".heifs",
+    ".hif", ".avif", ".avifs", ".jp2", ".j2k", ".j2c", ".jpc", ".jpf",
+    ".jpx", ".ico", ".pcx", ".tga", ".icb", ".vda", ".vst", ".ppm",
+    ".pgm", ".pbm", ".pnm", ".pfm", ".dds", ".qoi", ".psd",
+}
+IMAGE_FILE_FILTER = (
+    "所有支持的图片 (" + " ".join("*" + ext for ext in sorted(SUPPORTED)) + ");;"
+    "手机照片 (*.heic *.heif *.heics *.heifs *.hif *.jpg *.jpeg *.jfif);;"
+    "所有文件 (*)"
+)
 
 
 @dataclass(frozen=True)
@@ -74,8 +93,6 @@ def normalized_filename(value: str) -> str:
 
 def import_photo(path: str, staging: str) -> tuple[Photo, bool]:
     source = Path(path)
-    if source.suffix.lower() not in SUPPORTED:
-        raise ValueError("请选择 JPG、PNG、WebP、BMP、GIF 或 TIFF 图片。")
     if not source.is_file():
         raise ValueError("找不到这张图片，它可能已被移动。")
     uid = uuid.uuid4().hex
@@ -83,9 +100,17 @@ def import_photo(path: str, staging: str) -> tuple[Photo, bool]:
     shutil.copyfile(source, cached)
     original_cached = cached
     try:
-        with Image.open(cached) as opened:
-            animated = getattr(opened, "n_frames", 1) > 1
-            opened.seek(0)
+        # Inspect the actual bytes: downloaded images can have a misleading
+        # extension or no extension at all. Avoid plugins requiring external
+        # programs (e.g. EPS/Ghostscript).
+        # close() also releases Pillow's memory maps on Windows; __exit__ alone
+        # only closes file pointers and can leave PGM/BMP caches locked.
+        with closing(Image.open(cached, formats=IMAGE_FORMATS)) as opened:
+            animated = opened.format != "PSD" and getattr(opened, "n_frames", 1) > 1
+            # HEIF opens on its declared primary image, which need not be 0.
+            # Preserve it rather than selecting an auxiliary/alternate photo.
+            if opened.format not in {"HEIF", "PSD"}:
+                opened.seek(0)
             image = ImageOps.exif_transpose(opened)
             image.load()
             width, height = image.size
@@ -93,8 +118,8 @@ def import_photo(path: str, staging: str) -> tuple[Photo, bool]:
                 raise ValueError("图片尺寸无效。")
             # img2pdf embeds JPEG/PNG without recompression. Other formats are
             # normalized to a lossless first-frame PNG, matching the preview.
-            if source.suffix.lower() not in {".jpg", ".jpeg", ".png"} or animated:
-                normalized = cached.with_suffix(".png")
+            if opened.format not in {"JPEG", "PNG"} or animated:
+                normalized = cached.with_name(uid + "-normalized.png")
                 image.convert("RGBA" if "A" in image.getbands() or "transparency" in image.info else "RGB").save(normalized, "PNG")
                 cached = normalized
             thumb = image.convert("RGBA")
@@ -114,8 +139,10 @@ def import_photo(path: str, staging: str) -> tuple[Photo, bool]:
 def friendly_error(exc: Exception) -> str:
     if isinstance(exc, PermissionError):
         return "没有读写权限，或文件正被其他程序占用。请关闭已打开的 PDF，或换一个保存位置。"
-    if isinstance(exc, (UnidentifiedImageError, Image.DecompressionBombError)):
-        return "图片无法读取，可能已损坏或尺寸过大。请换一张图片再试。"
+    if isinstance(exc, Image.DecompressionBombError):
+        return "图片尺寸过大，请缩小图片后重试。"
+    if isinstance(exc, UnidentifiedImageError):
+        return "无法识别图片内容，文件可能损坏或格式暂不支持。支持 HEIC/HEIF、AVIF、JPG、PNG 等图片。"
     if isinstance(exc, FileNotFoundError):
         return "找不到文件或保存位置，请重新选择。"
     if isinstance(exc, OSError) and getattr(exc, "errno", None) == 28:
@@ -171,7 +198,8 @@ def export_pdf(photos: list[Photo], target: str, options: ExportOptions,
                     blank.add_overlay(source_page, pikepdf.Rectangle(margin, margin, w - margin, h - margin), shrink=True, expand=True)
             with output.open_metadata(set_pikepdf_as_editor=False) as meta:
                 meta["dc:title"] = destination.stem
-                meta["pdf:Producer"] = "PaperDesk 2.0 / PDF Arranger derived processing"
+                from . import __version__
+                meta["pdf:Producer"] = f"PaperDesk {__version__} / PDF Arranger derived processing"
             output.save(temporary, compress_streams=True)
         # Never leave a partially generated file at the chosen destination.
         with pikepdf.Pdf.open(temporary) as verified:

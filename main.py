@@ -18,7 +18,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("纸间 PDF")
-    app.setApplicationVersion("2.0.0")
+    from paperdesk import __version__
+    app.setApplicationVersion(__version__)
     app.setStyle("Fusion")
     # Register Windows fonts explicitly so CJK also renders in Qt's offscreen
     # verification mode, which does not enumerate the system font database.
